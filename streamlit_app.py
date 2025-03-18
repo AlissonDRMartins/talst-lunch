@@ -147,11 +147,11 @@ with st.sidebar:
     )
 
     st.markdown("### Novo Agendamento")
-    st.markdown("Selecione um nome e um horário disponível")
+    st.markdown("Selecione o seu nome e um horário disponível")
 
     names = get_employee_names()
     if names:
-        opt = st.selectbox("Selecione um nome", options=names)
+        opt = st.selectbox("Selecione o seu nome", options=names)
 
         if st.session_state.time_slot != "":
             st.markdown(
