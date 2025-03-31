@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-from aurora_dsql import DSQLConnection
-import asyncio
+from .aurora_dsql import DSQLConnection
 
 st.set_page_config(
     page_title="Agendamento",
