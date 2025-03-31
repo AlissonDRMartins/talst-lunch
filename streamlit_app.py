@@ -164,7 +164,12 @@ with st.sidebar:
             )
 
             if st.button("Confirmar Agendamento", key="confirm_sidebar"):
-                confirm_booking(opt)
+                # Perform the update directly here
+                supabase.table("employees").update(
+                    {"booked": True, "scheduled_time": st.session_state.time_slot}
+                ).eq("name", opt).execute()
+                st.success("Agendamento confirmado com sucesso!")
+                st.rerun()
         else:
             st.warning("Selecione um horário disponível")
     else:
