@@ -106,37 +106,89 @@ def init_connection():
 
 
 supabase = init_connection()
+
+# Initialize session state variables
 if "time_slot" not in st.session_state:
     st.session_state["time_slot"] = ""
+
+# Check if we need to handle a completed booking from a previous run
+if "booking_in_progress" in st.session_state and st.session_state.get(
+    "booking_success", False
+):
+    st.sidebar.success(
+        f"Agendamento confirmado com sucesso para {st.session_state.get('booking_employee', '')}!"
+    )
+
+    # Clean up session state after showing success message
+    if "booking_in_progress" in st.session_state:
+        del st.session_state["booking_in_progress"]
+    if "booking_employee" in st.session_state:
+        del st.session_state["booking_employee"]
+    if "booking_success" in st.session_state:
+        del st.session_state["booking_success"]
+    # Keep the time_slot reset to avoid double-booking
+    st.session_state.time_slot = ""
 
 
 def get_employee_names():
     """Get list of employee names that haven't been booked yet"""
-    result = supabase.table("employees").select("name").eq("booked", False).execute()
+    try:
+        result = (
+            supabase.table("employees").select("name").eq("booked", False).execute()
+        )
 
-    if not result.data:
+        if not result.data:
+            return []
+
+        names = [employee["name"] for employee in result.data]
+        return names
+    except Exception as e:
         return []
 
-    names = [employee["name"] for employee in result.data]
-    return names
 
+# Simplified direct booking function using session state to persist across reruns
+def confirm_booking_direct(employee_name):
+    try:
+        # Store booking details in session state to persist across reruns
+        if "booking_in_progress" not in st.session_state:
+            # First run - store booking details and perform update
+            st.session_state["booking_in_progress"] = True
+            st.session_state["booking_employee"] = employee_name
+            st.session_state["booking_time"] = st.session_state.time_slot
 
-@st.dialog("Confirme as informações")
-def confirm_booking(opt: str):
-    st.markdown("### Confirmação de Agendamento")
-    st.markdown(f"**Nome:** {opt}")
-    st.markdown(f"**Horário:** {st.session_state.time_slot}")
-
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        if st.button("Confirmar", key="confirm_dialog"):
-            (
+            # Execute the update
+            result = (
                 supabase.table("employees")
                 .update({"booked": True, "scheduled_time": st.session_state.time_slot})
-                .eq("name", opt)
+                .eq("name", employee_name)
                 .execute()
             )
-            st.success("Agendamento confirmado com sucesso!")
+
+            # Set success flag and rerun to show success message
+            st.session_state["booking_success"] = True
+            st.rerun()
+        elif st.session_state.get("booking_success", False):
+            # Second run - show success message and clean up
+            st.sidebar.success(
+                f"Agendamento confirmado com sucesso para {st.session_state.booking_employee}!"
+            )
+
+            # Clean up session state
+            del st.session_state["booking_in_progress"]
+            del st.session_state["booking_employee"]
+            del st.session_state["booking_success"]
+            st.session_state.time_slot = ""
+
+            # Don't rerun again - let the app refresh naturally next time
+    except Exception as e:
+        st.sidebar.error(f"Erro ao atualizar: {str(e)}")
+        # Clean up session state on error
+        if "booking_in_progress" in st.session_state:
+            del st.session_state["booking_in_progress"]
+        if "booking_employee" in st.session_state:
+            del st.session_state["booking_employee"]
+        if "booking_success" in st.session_state:
+            del st.session_state["booking_success"]
 
 
 with st.sidebar:
@@ -162,12 +214,9 @@ with st.sidebar:
                 unsafe_allow_html=True,
             )
 
+            # Simplified direct booking - no dialog
             if st.button("Confirmar Agendamento", key="confirm_sidebar"):
-                # Perform the update directly here
-                supabase.table("employees").update(
-                    {"booked": True, "scheduled_time": st.session_state.time_slot}
-                ).eq("name", opt).execute()
-                st.success("Agendamento confirmado com sucesso!")
+                confirm_booking_direct(opt)
         else:
             st.warning("Selecione um horário disponível")
     else:
@@ -176,8 +225,12 @@ with st.sidebar:
 st.title("Agendamento de Horários")
 st.markdown("Selecione um horário disponível nos turnos abaixo:")
 
-response = supabase.table("employees").select("*").execute()
-df = pd.DataFrame(response.data)
+# Fetch and show all data
+try:
+    response = supabase.table("employees").select("*").execute()
+    df = pd.DataFrame(response.data)
+except Exception as e:
+    df = pd.DataFrame(columns=["name", "booked", "scheduled_time"])
 
 TIME_SLOTS = {
     "first_shift": ["11:50:00", "12:10:00", "12:30:00"],
@@ -270,45 +323,52 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("### Agendamentos Confirmados")
 
-filtered_df = df.loc[df["scheduled_time"] == st.session_state.time_slot]
-filtered_df.columns = ["Nome", "Agendado", "Horário"]
-filtered_df = filtered_df.drop(columns="Agendado")
+# Add safety check for DataFrame columns
+if "scheduled_time" in df.columns and "name" in df.columns and "booked" in df.columns:
+    filtered_df = df.loc[df["scheduled_time"] == st.session_state.time_slot]
+    filtered_df = filtered_df[["name", "booked", "scheduled_time"]]
+    filtered_df.columns = ["Nome", "Agendado", "Horário"]
+    filtered_df = filtered_df.drop(columns="Agendado")
 
-if not filtered_df.empty:
-    styled_df = filtered_df.style.set_properties(
-        **{
-            "background-color": "#f8faf9",
-            "color": "#111111",
-            "border": "1px solid #e6e6e6",
-            "text-align": "left",
-            "font-size": "14px",
-            "padding": "8px",
-        }
-    ).set_table_styles(
-        [
-            {
-                "selector": "th",
-                "props": [
-                    ("background-color", "#8eb6a7"),
-                    ("color", "white"),
-                    ("font-weight", "bold"),
-                    ("text-align", "left"),
-                    ("font-size", "16px"),
-                    ("padding", "10px"),
-                ],
-            },
-            {
-                "selector": "tr:hover",
-                "props": [
-                    ("background-color", "#e6f0eb"),
-                ],
-            },
-        ]
-    )
+    if not filtered_df.empty:
+        styled_df = filtered_df.style.set_properties(
+            **{
+                "background-color": "#f8faf9",
+                "color": "#111111",
+                "border": "1px solid #e6e6e6",
+                "text-align": "left",
+                "font-size": "14px",
+                "padding": "8px",
+            }
+        ).set_table_styles(
+            [
+                {
+                    "selector": "th",
+                    "props": [
+                        ("background-color", "#8eb6a7"),
+                        ("color", "white"),
+                        ("font-weight", "bold"),
+                        ("text-align", "left"),
+                        ("font-size", "16px"),
+                        ("padding", "10px"),
+                    ],
+                },
+                {
+                    "selector": "tr:hover",
+                    "props": [
+                        ("background-color", "#e6f0eb"),
+                    ],
+                },
+            ]
+        )
 
-    st.dataframe(styled_df, hide_index=True, use_container_width=True)
+        st.dataframe(styled_df, hide_index=True, use_container_width=True)
+    else:
+        st.info("Nenhum agendamento marcado para este horário.")
 else:
-    st.info("Nenhum agendamento marcado para este horário.")
+    st.error(
+        "Estrutura do banco de dados incorreta. Verifique se as colunas 'name', 'booked' e 'scheduled_time' existem."
+    )
 
 st.markdown("---")
 st.markdown(
