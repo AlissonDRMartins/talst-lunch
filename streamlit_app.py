@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 from aurora_dsql import DSQLConnection
-
+from time import sleep
+import random
 
 st.set_page_config(
     page_title="Agendamento",
@@ -142,9 +143,13 @@ with st.sidebar:
             """,
                 unsafe_allow_html=True,
             )
-
+            is_disabled = True
+            sleep(random.randint(1, 3))
+            is_disabled = False
             # Simplified direct booking - no dialog
-            if st.button("Confirmar Agendamento", key="confirm_sidebar"):
+            if st.button(
+                "Confirmar Agendamento", key="confirm_sidebar", disabled=is_disabled
+            ):
                 st.session_state.employee_name = opt
 
                 aurora_dsql.update_employee_booking(
