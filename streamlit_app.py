@@ -149,22 +149,33 @@ def get_employee_names():
 # Simplified direct booking function using session state to persist across reruns
 def confirm_booking_direct(employee_name):
     try:
-        # Store booking details in session state to persist across reruns
+        # First run - store booking details and perform update
         if "booking_in_progress" not in st.session_state:
-            # First run - store booking details and perform update
             st.session_state["booking_in_progress"] = True
             st.session_state["booking_employee"] = employee_name
             st.session_state["booking_time"] = st.session_state.time_slot
 
-            # Execute the update
+            # Add timestamp to track when the update was made
+            import datetime
+
+            current_time = datetime.datetime.now().isoformat()
+
+            # Execute the update with timestamp
             result = (
                 supabase.table("employees")
-                .update({"booked": True, "scheduled_time": st.session_state.time_slot})
+                .update(
+                    {
+                        "booked": True,
+                        "scheduled_time": st.session_state.time_slot,
+                        "last_updated": current_time,  # Add this field to your Supabase table
+                        "updated_by": "scheduler_app",  # Add this field to identify source
+                    }
+                )
                 .eq("name", employee_name)
                 .execute()
             )
 
-            # Set success flag and rerun to show success message
+            # Set success flag and rerun
             st.session_state["booking_success"] = True
             st.rerun()
         elif st.session_state.get("booking_success", False):
