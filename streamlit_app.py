@@ -176,7 +176,7 @@ def confirm_booking_direct(employee_name):
                 .eq("name", employee_name)
                 .execute()
             )
-            sleep(random.rand(1, 5))
+            sleep(random.randint(1, 5))
 
             # Set success flag and rerun
             st.session_state["booking_success"] = True
