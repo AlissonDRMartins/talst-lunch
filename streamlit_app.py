@@ -144,7 +144,7 @@ with st.sidebar:
                 unsafe_allow_html=True,
             )
             is_disabled = True
-            sleep(random.randint(1, 3))
+            sleep(random.randint(2, 3))
             is_disabled = False
             # Simplified direct booking - no dialog
             if st.button(
