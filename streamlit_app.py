@@ -137,7 +137,6 @@ def confirm_booking(opt: str):
                 .execute()
             )
             st.success("Agendamento confirmado com sucesso!")
-            st.rerun()
 
 
 with st.sidebar:
@@ -169,7 +168,6 @@ with st.sidebar:
                     {"booked": True, "scheduled_time": st.session_state.time_slot}
                 ).eq("name", opt).execute()
                 st.success("Agendamento confirmado com sucesso!")
-                st.rerun()
         else:
             st.warning("Selecione um horário disponível")
     else:
