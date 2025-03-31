@@ -119,7 +119,8 @@ if "time_slot" not in st.session_state:
     st.session_state["time_slot"] = ""
 if "employee_name" not in st.session_state:
     st.session_state["employee_name"] = ""
-
+if "is_disabled" not in st.session_state:
+    st.session_state["is_disabled"] = False
 
 with st.sidebar:
     st.logo(
@@ -143,15 +144,17 @@ with st.sidebar:
             """,
                 unsafe_allow_html=True,
             )
-            is_disabled = True
+            st.session_state.is_disabled = True
             sleep(random.randint(2, 3))
-            is_disabled = False
+            st.session_state.is_disabled = False
             # Simplified direct booking - no dialog
             if st.button(
-                "Confirmar Agendamento", key="confirm_sidebar", disabled=is_disabled
+                "Confirmar Agendamento",
+                key="confirm_sidebar",
+                disabled=st.session_state.is_disabled,
             ):
                 st.session_state.employee_name = opt
-
+                st.session_state.is_disabled = True
                 aurora_dsql.update_employee_booking(
                     st.session_state.employee_name, st.session_state.time_slot
                 )
