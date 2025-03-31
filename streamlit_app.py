@@ -2,6 +2,7 @@ import streamlit as st
 from supabase import create_client
 import pandas as pd
 from time import sleep
+import random
 
 st.set_page_config(
     page_title="Agendamento",
@@ -175,7 +176,7 @@ def confirm_booking_direct(employee_name):
                 .eq("name", employee_name)
                 .execute()
             )
-            sleep(2)
+            sleep(random.rand(1, 5))
 
             # Set success flag and rerun
             st.session_state["booking_success"] = True
