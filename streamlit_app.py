@@ -1,8 +1,7 @@
 import streamlit as st
-from supabase import create_client
 import pandas as pd
-from time import sleep
-import random
+from aurora_dsql import DSQLConnection
+import asyncio
 
 st.set_page_config(
     page_title="Agendamento",
@@ -101,108 +100,24 @@ st.markdown(
 
 
 @st.cache_resource
-def init_connection():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
+def dsql_conn():
+    return DSQLConnection(
+        access_key=st.secrets["AWS_ACCESS_KEY"],
+        secret_key=st.secrets["AWS_SECRET_KEY"],
+        region=st.secrets["REGION"],
+        hostname=st.secrets["HOSTNAME"],
+        database=st.secrets["DATABASE"],
+        username=st.secrets["USERNAME"],
+    )
 
 
-supabase = init_connection()
+aurora_dsql = dsql_conn()
 
 # Initialize session state variables
 if "time_slot" not in st.session_state:
     st.session_state["time_slot"] = ""
-
-# Check if we need to handle a completed booking from a previous run
-if "booking_in_progress" in st.session_state and st.session_state.get(
-    "booking_success", False
-):
-    st.sidebar.success(
-        f"Agendamento confirmado com sucesso para {st.session_state.get('booking_employee', '')}!"
-    )
-
-    # Clean up session state after showing success message
-    if "booking_in_progress" in st.session_state:
-        del st.session_state["booking_in_progress"]
-    if "booking_employee" in st.session_state:
-        del st.session_state["booking_employee"]
-    if "booking_success" in st.session_state:
-        del st.session_state["booking_success"]
-    # Keep the time_slot reset to avoid double-booking
-    st.session_state.time_slot = ""
-
-
-def get_employee_names():
-    """Get list of employee names that haven't been booked yet"""
-    try:
-        result = (
-            supabase.table("employees").select("name").eq("booked", False).execute()
-        )
-
-        if not result.data:
-            return []
-
-        names = [employee["name"] for employee in result.data]
-        return names
-    except Exception as e:
-        return []
-
-
-# Simplified direct booking function using session state to persist across reruns
-def confirm_booking_direct(employee_name):
-    try:
-        # First run - store booking details and perform update
-        if "booking_in_progress" not in st.session_state:
-            st.session_state["booking_in_progress"] = True
-            st.session_state["booking_employee"] = employee_name
-            st.session_state["booking_time"] = st.session_state.time_slot
-
-            # Add timestamp to track when the update was made
-            import datetime
-
-            current_time = datetime.datetime.now().isoformat()
-
-            # Execute the update with timestamp
-            result = (
-                supabase.table("employees")
-                .update(
-                    {
-                        "booked": True,
-                        "scheduled_time": st.session_state.time_slot,
-                        "last_updated": current_time,  # Add this field to your Supabase table
-                        "updated_by": "scheduler_app",  # Add this field to identify source
-                    }
-                )
-                .eq("name", employee_name)
-                .execute()
-            )
-            sleep(random.randint(1, 5))
-
-            # Set success flag and rerun
-            st.session_state["booking_success"] = True
-            st.rerun()
-        elif st.session_state.get("booking_success", False):
-            # Second run - show success message and clean up
-            st.sidebar.success(
-                f"Agendamento confirmado com sucesso para {st.session_state.booking_employee}!"
-            )
-
-            # Clean up session state
-            del st.session_state["booking_in_progress"]
-            del st.session_state["booking_employee"]
-            del st.session_state["booking_success"]
-            st.session_state.time_slot = ""
-
-            # Don't rerun again - let the app refresh naturally next time
-    except Exception as e:
-        st.sidebar.error(f"Erro ao atualizar: {str(e)}")
-        # Clean up session state on error
-        if "booking_in_progress" in st.session_state:
-            del st.session_state["booking_in_progress"]
-        if "booking_employee" in st.session_state:
-            del st.session_state["booking_employee"]
-        if "booking_success" in st.session_state:
-            del st.session_state["booking_success"]
+if "employee_name" not in st.session_state:
+    st.session_state["employee_name"] = ""
 
 
 with st.sidebar:
@@ -214,7 +129,7 @@ with st.sidebar:
     st.markdown("### Novo Agendamento")
     st.markdown("Selecione o seu nome e um horário disponível")
 
-    names = get_employee_names()
+    names = aurora_dsql.get_nonbooked_employees()
     if names:
         opt = st.selectbox("Selecione o seu nome", options=names)
 
@@ -230,7 +145,11 @@ with st.sidebar:
 
             # Simplified direct booking - no dialog
             if st.button("Confirmar Agendamento", key="confirm_sidebar"):
-                confirm_booking_direct(opt)
+                st.session_state.employee_name = opt
+
+                aurora_dsql.update_employee_booking(
+                    st.session_state.employee_name, st.session_state.time_slot
+                )
         else:
             st.warning("Selecione um horário disponível")
     else:
@@ -239,12 +158,9 @@ with st.sidebar:
 st.title("Agendamento de Horários")
 st.markdown("Selecione um horário disponível nos turnos abaixo:")
 
-# Fetch and show all data
-try:
-    response = supabase.table("employees").select("*").execute()
-    df = pd.DataFrame(response.data)
-except Exception as e:
-    df = pd.DataFrame(columns=["name", "booked", "scheduled_time"])
+
+response = aurora_dsql.get_booked_employees()
+df = pd.DataFrame(response, columns=["name", "booked", "scheduled_time"])
 
 TIME_SLOTS = {
     "first_shift": ["11:50:00", "12:10:00", "12:30:00"],
@@ -337,52 +253,12 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("### Agendamentos Confirmados")
 
-# Add safety check for DataFrame columns
-if "scheduled_time" in df.columns and "name" in df.columns and "booked" in df.columns:
-    filtered_df = df.loc[df["scheduled_time"] == st.session_state.time_slot]
-    filtered_df = filtered_df[["name", "booked", "scheduled_time"]]
-    filtered_df.columns = ["Nome", "Agendado", "Horário"]
-    filtered_df = filtered_df.drop(columns="Agendado")
 
-    if not filtered_df.empty:
-        styled_df = filtered_df.style.set_properties(
-            **{
-                "background-color": "#f8faf9",
-                "color": "#111111",
-                "border": "1px solid #e6e6e6",
-                "text-align": "left",
-                "font-size": "14px",
-                "padding": "8px",
-            }
-        ).set_table_styles(
-            [
-                {
-                    "selector": "th",
-                    "props": [
-                        ("background-color", "#8eb6a7"),
-                        ("color", "white"),
-                        ("font-weight", "bold"),
-                        ("text-align", "left"),
-                        ("font-size", "16px"),
-                        ("padding", "10px"),
-                    ],
-                },
-                {
-                    "selector": "tr:hover",
-                    "props": [
-                        ("background-color", "#e6f0eb"),
-                    ],
-                },
-            ]
-        )
-
-        st.dataframe(styled_df, hide_index=True, use_container_width=True)
-    else:
-        st.info("Nenhum agendamento marcado para este horário.")
-else:
-    st.error(
-        "Estrutura do banco de dados incorreta. Verifique se as colunas 'name', 'booked' e 'scheduled_time' existem."
-    )
+st.dataframe(
+    df.loc[df["scheduled_time"] == st.session_state.time_slot],
+    hide_index=True,
+    use_container_width=True,
+)
 
 st.markdown("---")
 st.markdown(
