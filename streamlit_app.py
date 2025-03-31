@@ -143,9 +143,9 @@ with st.sidebar:
             """,
                 unsafe_allow_html=True,
             )
-            is_disabled = False
-            sleep(random.randint(1, 3))
             is_disabled = True
+            sleep(random.randint(1, 3))
+            is_disabled = False
             # Simplified direct booking - no dialog
             if st.button(
                 "Confirmar Agendamento", key="confirm_sidebar", disabled=is_disabled
